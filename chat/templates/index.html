@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="tr">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width,initial-scale=1" />
+        <title>Mini Chat – {{ room_name }}</title>
+        <style>
+            body {
+                font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial,
+                    sans-serif;
+                margin: 24px;
+            }
+            .wrap {
+                max-width: 720px;
+                margin: 0 auto;
+            }
+            h1 {
+                margin: 0 0 8px;
+            }
+            #status {
+                font-size: 14px;
+                color: #666;
+                margin-bottom: 16px;
+            }
+            #messages {
+                height: 360px;
+                border: 1px solid #ddd;
+                border-radius: 8px;
+                padding: 12px;
+                overflow-y: auto;
+                background: #fafafa;
+                margin-bottom: 12px;
+            }
+            .msg {
+                margin: 6px 0;
+                padding: 8px 10px;
+                background: white;
+                border-radius: 8px;
+                border: 1px solid #eee;
+            }
+            .me {
+                border-color: #d0ebff;
+                background: #f0f8ff;
+            }
+            form {
+                display: flex;
+                gap: 8px;
+            }
+            input[type="text"] {
+                flex: 1;
+                padding: 10px 12px;
+                border: 1px solid #ddd;
+                border-radius: 8px;
+            }
+            button {
+                padding: 10px 14px;
+                border: 0;
+                border-radius: 8px;
+                background: #1f7aec;
+                color: #fff;
+                cursor: pointer;
+            }
+            button:disabled {
+                opacity: 0.6;
+                cursor: not-allowed;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="wrap">
+            <h1>Oda: {{ room_name }}</h1>
+            <div id="status">Bağlantı kuruluyor…</div>
+
+            <div
+                id="messages"
+                aria-live="polite"
+                aria-relevant="additions"
+            ></div>
+
+            <form id="chat-form" autocomplete="off">
+                <input
+                    id="message-input"
+                    type="text"
+                    placeholder="Mesaj yazın ve Enter’a basın…"
+                />
+                <button id="send-btn" type="submit">Gönder</button>
+            </form>
+        </div>
+
+        <script>
+            // Django template’ten gelen oda adı:
+            const roomName = "{{ room_name|escapejs }}";
+
+            // ws / wss şeması seçimi:
+            const wsScheme = location.protocol === "https:" ? "wss" : "ws";
+            const wsUrl = `${wsScheme}://${location.host}/ws/chat/${roomName}/`;
+
+            const statusEl = document.getElementById("status");
+            const messagesEl = document.getElementById("messages");
+            const formEl = document.getElementById("chat-form");
+            const inputEl = document.getElementById("message-input");
+            const sendBtn = document.getElementById("send-btn");
+
+            let socket;
+
+            function appendMessage(text, isMe = false) {
+                const div = document.createElement("div");
+                div.className = "msg" + (isMe ? " me" : "");
+                div.textContent = text;
+                messagesEl.appendChild(div);
+                messagesEl.scrollTop = messagesEl.scrollHeight; // auto-scroll
+            }
+
+            function setStatus(text) {
+                statusEl.textContent = text;
+            }
+
+            function connect() {
+                socket = new WebSocket(wsUrl);
+
+                socket.addEventListener("open", () => {
+                    setStatus("Bağlantı kuruldu ✔︎");
+                    sendBtn.disabled = false;
+                });
+
+                socket.addEventListener("message", (event) => {
+                    // Backend’den gelenin düz metin veya JSON olmasına göre uyarlarsın.
+                    // Şimdilik düz metin kabul edelim:
+                    try {
+                        const data = JSON.parse(event.data);
+                        appendMessage(data.message ?? event.data);
+                    } catch {
+                        appendMessage(event.data);
+                    }
+                });
+
+                socket.addEventListener("close", () => {
+                    setStatus(
+                        "Bağlantı kapandı. 3 sn içinde yeniden denenecek…"
+                    );
+                    sendBtn.disabled = true;
+                    setTimeout(connect, 3000);
+                });
+
+                socket.addEventListener("error", () => {
+                    setStatus("Hata oluştu. Yeniden bağlanmayı deniyorum…");
+                });
+            }
+
+            connect();
+
+            formEl.addEventListener("submit", (e) => {
+                e.preventDefault();
+                const msg = inputEl.value.trim();
+                if (!msg || socket.readyState !== WebSocket.OPEN) return;
+
+                // Basit: düz metin gönder
+                socket.send(msg);
+
+                // İstersen JSON gönder:
+                // socket.send(JSON.stringify({ message: msg }));
+
+                appendMessage(msg, true);
+                inputEl.value = "";
+                inputEl.focus();
+            });
+
+            // Enter ile gönderme kolaylığı (form zaten submit ediyor ama netleştirelim)
+            inputEl.addEventListener("keydown", (e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    sendBtn.click();
+                }
+            });
+        </script>
+    </body>
+</html>
