@@ -9,6 +9,7 @@
                 font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial,
                     sans-serif;
                 margin: 24px;
+                background: #f8f9fa;
             }
             .wrap {
                 max-width: 720px;
@@ -23,24 +24,34 @@
                 margin-bottom: 16px;
             }
             #messages {
-                height: 360px;
+                height: 420px;
                 border: 1px solid #ddd;
                 border-radius: 8px;
                 padding: 12px;
                 overflow-y: auto;
-                background: #fafafa;
+                background: #fff;
                 margin-bottom: 12px;
             }
             .msg {
                 margin: 6px 0;
                 padding: 8px 10px;
-                background: white;
+                background: #f1f3f5;
                 border-radius: 8px;
                 border: 1px solid #eee;
+                max-width: 80%;
+                word-wrap: break-word;
             }
-            .me {
-                border-color: #d0ebff;
-                background: #f0f8ff;
+            .msg.me {
+                background: #e7f1ff;
+                border-color: #cfe2ff;
+                margin-left: auto;
+                text-align: right;
+            }
+            .username {
+                font-size: 12px;
+                color: #777;
+                display: block;
+                margin-bottom: 2px;
             }
             form {
                 display: flex;
@@ -71,12 +82,19 @@
             <h1>Oda: {{ room_name }}</h1>
             <div id="status">Bağlantı kuruluyor…</div>
 
-            <div
-                id="messages"
-                aria-live="polite"
-                aria-relevant="additions"
-            ></div>
+            <!-- Geçmiş mesajlar -->
+            <div id="messages" aria-live="polite" aria-relevant="additions">
+                {% for msg in messages %}
+                <div
+                    class="msg{% if msg.username == request.user.username %} me{% endif %}"
+                >
+                    <span class="username">{{ msg.username }}</span>
+                    {{ msg.content }}
+                </div>
+                {% endfor %}
+            </div>
 
+            <!-- Mesaj gönderme formu -->
             <form id="chat-form" autocomplete="off">
                 <input
                     id="message-input"
@@ -88,10 +106,7 @@
         </div>
 
         <script>
-            // Django template’ten gelen oda adı:
             const roomName = "{{ room_name|escapejs }}";
-
-            // ws / wss şeması seçimi:
             const wsScheme = location.protocol === "https:" ? "wss" : "ws";
             const wsUrl = `${wsScheme}://${location.host}/ws/chat/${roomName}/`;
 
@@ -101,19 +116,20 @@
             const inputEl = document.getElementById("message-input");
             const sendBtn = document.getElementById("send-btn");
 
-            let socket;
-
-            function appendMessage(text, isMe = false) {
+            function appendMessage(username, text, isMe = false) {
                 const div = document.createElement("div");
                 div.className = "msg" + (isMe ? " me" : "");
-                div.textContent = text;
+                div.innerHTML = `<span class="username">${username}</span>${text}`;
                 messagesEl.appendChild(div);
-                messagesEl.scrollTop = messagesEl.scrollHeight; // auto-scroll
+                messagesEl.scrollTop = messagesEl.scrollHeight;
             }
 
             function setStatus(text) {
                 statusEl.textContent = text;
             }
+
+            let socket;
+            connect();
 
             function connect() {
                 socket = new WebSocket(wsUrl);
@@ -124,14 +140,12 @@
                 });
 
                 socket.addEventListener("message", (event) => {
-                    // Backend’den gelenin düz metin veya JSON olmasına göre uyarlarsın.
-                    // Şimdilik düz metin kabul edelim:
-                    try {
-                        const data = JSON.parse(event.data);
-                        appendMessage(data.message ?? event.data);
-                    } catch {
-                        appendMessage(event.data);
-                    }
+                    const data = JSON.parse(event.data);
+                    const username = data.username || "Anonim";
+                    const text = data.message || "";
+                    const isMe =
+                        username === "{{ request.user.username|escapejs }}";
+                    appendMessage(username, text, isMe);
                 });
 
                 socket.addEventListener("close", () => {
@@ -147,30 +161,13 @@
                 });
             }
 
-            connect();
-
             formEl.addEventListener("submit", (e) => {
                 e.preventDefault();
                 const msg = inputEl.value.trim();
                 if (!msg || socket.readyState !== WebSocket.OPEN) return;
-
-                // Basit: düz metin gönder
-                socket.send(msg);
-
-                // İstersen JSON gönder:
-                // socket.send(JSON.stringify({ message: msg }));
-
-                appendMessage(msg, true);
+                socket.send(JSON.stringify({ message: msg }));
                 inputEl.value = "";
                 inputEl.focus();
-            });
-
-            // Enter ile gönderme kolaylığı (form zaten submit ediyor ama netleştirelim)
-            inputEl.addEventListener("keydown", (e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                    e.preventDefault();
-                    sendBtn.click();
-                }
             });
         </script>
     </body>
